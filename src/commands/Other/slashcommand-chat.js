@@ -8,7 +8,6 @@ const fs = require("fs");
 const path = require("path");
 
 function simpanPercakapan(userId, pesanUser, balasanBot) {
-  // Simpan di folder utama project
   const filePath = path.join(__dirname, "../../../chatlog.json");
   let data = [];
   if (fs.existsSync(filePath)) {
@@ -22,6 +21,14 @@ function simpanPercakapan(userId, pesanUser, balasanBot) {
   });
   fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf-8");
   console.log("Percakapan disimpan:", filePath);
+}
+
+function loadDynamicResponses() {
+  const filePath = path.join(__dirname, "../../../responses.json");
+  if (fs.existsSync(filePath)) {
+    return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+  }
+  return [];
 }
 
 // Simple rule-based chatbot responses
@@ -57,21 +64,43 @@ module.exports = new ApplicationCommand({
   run: async (client, interaction) => {
     const pesan = interaction.options.getString("pesan", true).toLowerCase();
     let found = false;
-    let balasan = "Maaf, aku belum mengerti pertanyaan itu.";
+    let balasan = `<@${interaction.user.id}>! `; // Sapa user
+    let customReply = "Maaf, aku belum mengerti pertanyaan itu.";
+
+    // Cek ke responses bawaan
     for (const rule of responses) {
       if (rule.pattern.test(pesan)) {
-        balasan = rule.reply;
-        await interaction.reply({ content: balasan });
+        customReply = rule.reply;
+        await interaction.reply({ content: customReply + balasan });
         found = true;
         break;
       }
     }
+
+    // Jika belum ditemukan, cek ke responses dinamis dari file
+    if (!found) {
+      const dynamic = loadDynamicResponses();
+      for (const rule of dynamic) {
+        try {
+          const regex = new RegExp(rule.pattern, "i");
+          if (regex.test(pesan)) {
+            customReply = rule.reply;
+            await interaction.reply({ content: balasan + customReply });
+            found = true;
+            break;
+          }
+        } catch (e) {
+          // skip jika regex error
+        }
+      }
+    }
+
     if (!found) {
       await interaction.reply({
-        content: balasan,
+        content: balasan + customReply,
       });
     }
     // Simpan percakapan setiap kali user chat
-    simpanPercakapan(interaction.user.id, pesan, balasan);
+    simpanPercakapan(interaction.user.id, pesan, balasan + customReply);
   },
 }).toJSON();
